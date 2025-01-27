@@ -74,12 +74,8 @@ To run this application, ensure you have the following dependencies installed:
 - `stock_lstm.h5`: Pre-trained LSTM model file.
 
 ## Visualisation
-- **Closing Price vs. Time Chart**
-- ![image](https://github.com/user-attachments/assets/f53cf5c7-0d3e-4e88-9762-6965c40897bb)
-- **Closing Price with Moving Averages**
-- ![image](https://github.com/user-attachments/assets/47445c8d-f02c-4ced-9b03-3632647c4971)
-
-- **Prediction vs. Original Price Comparison**
+![image](https://github.com/user-attachments/assets/f53cf5c7-0d3e-4e88-9762-6965c40897bb)
+![image](https://github.com/user-attachments/assets/47445c8d-f02c-4ced-9b03-3632647c4971)
 ![image](https://github.com/user-attachments/assets/f99b2c28-7ac8-4ee8-8c87-fd6242e7f541)
 
 

@@ -90,7 +90,8 @@ This project is open-source and available under the [MIT License](LICENSE).
 
 ## Contributors
 - **Mayank Choudhary**
-- **Devash Singh**
-- **Mukul Singh**
 - **Shambhavi Gunda**
+
+## Code Deployed
+- Link:https://mayank-stock-prediction.streamlit.app/
 

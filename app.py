@@ -50,7 +50,7 @@ if user_input:
     
         model_path = f"{user_input}_gru_model.h5"
         if os.path.exists(model_path):
-            model = load_model(model_path)
+            model = load_model(model_path, compile=False)
             y_predict = model.predict(X_test)
             y_predict = scaler.inverse_transform(y_predict.reshape(-1, 1))
             y_test = scaler.inverse_transform(y_test.reshape(-1, 1))

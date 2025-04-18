@@ -119,7 +119,7 @@ if user_input:
                     st.subheader("🔍 Input Sequence")
                     seq_dates = pd.date_range(end=input_date, periods=100, freq='D')
                     seq_prices = scaler.inverse_transform(seq.reshape(100, 1))
-                    st.line_chart(pd.DataFrame(seq_prices, index=seq_dates, columns=['Price'])
+                    st.line_chart(pd.DataFrame(seq_prices, index=seq_dates, columns=['Price']))
 
             except Exception as e:
                 st.error(f"Model loading failed: {str(e)}")

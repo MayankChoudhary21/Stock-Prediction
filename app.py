@@ -66,20 +66,23 @@ if user_input:
                 test_input = np.random.rand(1, 100, 1)
                 _ = model.predict(test_input)
                 
-                # Rest of processing remains the same
+                # Prediction
                 y_predict = model.predict(X_test)
                 y_predict = scaler.inverse_transform(y_predict.reshape(-1, 1))
                 y_test = scaler.inverse_transform(y_test.reshape(-1, 1))
 
+                # Display original data
                 st.subheader(f"{user_input} Historical Data")
                 st.write(df.describe())
 
+                # Plot closing price history
                 st.subheader('📊 Closing Price History')
                 fig = plt.figure(figsize=(14, 6))
                 plt.plot(df['Close'])
                 plt.ylabel('Price')
                 st.pyplot(fig)
 
+                # Plot moving averages
                 st.subheader('📈 Moving Averages (100 & 200 Days)')
                 fig = plt.figure(figsize=(14, 6))
                 ma100 = df['Close'].rolling(100).mean()
@@ -90,6 +93,7 @@ if user_input:
                 plt.legend()
                 st.pyplot(fig)
 
+                # Plot predicted vs actual prices
                 st.subheader("📉 Predicted vs Actual Prices")
                 fig = plt.figure(figsize=(14, 6))
                 plt.plot(df.index[-len(y_test):], y_test, 'b', label='Actual')
@@ -97,6 +101,24 @@ if user_input:
                 plt.legend()
                 st.pyplot(fig)
 
+                # Display table of predictions vs actual
+                st.subheader("📋 Real vs Predicted Table (Last 20 Samples)")
+                comparison_df = pd.DataFrame({
+                    'Date': df.index[-len(y_test):][-20:],
+                    'Actual Price': y_test.flatten()[-20:],
+                    'Predicted Price': y_predict.flatten()[-20:]
+                })
+                comparison_df['Difference'] = comparison_df['Predicted Price'] - comparison_df['Actual Price']
+                comparison_df['% Error'] = (comparison_df['Difference'] / comparison_df['Actual Price']) * 100
+                comparison_df.set_index('Date', inplace=True)
+                st.dataframe(comparison_df.style.format({
+                    'Actual Price': '${:.2f}',
+                    'Predicted Price': '${:.2f}',
+                    'Difference': '${:.2f}',
+                    '% Error': '{:.2f}%'
+                }))
+
+                # Custom input prediction
                 st.subheader("🎯 Custom Prediction")
                 input_date = st.date_input("Prediction Date", value=datetime.date.today())
                 input_price = st.number_input("Previous Closing Price", 

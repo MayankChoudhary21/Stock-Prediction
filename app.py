@@ -4,30 +4,35 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import load_model
-from keras.layers import GRU  # Required for loading GRU from .h5
+from keras.layers import GRU
 import yfinance as yf
 import datetime
 import os
 import keras, tensorflow as tf
 
-# Optional: Only import if chatbot is used
+# Optional: Groq chatbot
 try:
     from groq import Groq
 except ImportError:
     st.warning("⚠️ Groq package not found. Install via: `pip install groq`")
 
+# 🔧 Patch for old GRU models with invalid arguments like 'time_major'
+def patched_gru(*args, **kwargs):
+    kwargs.pop('time_major', None)  # Remove unsupported param
+    return GRU(*args, **kwargs)
+
 st.set_page_config(page_title="Stock Predictor + Chatbot", layout="wide")
 st.title('📈 Stock Trend Prediction using GRU + 💬 Chatbot')
 
-# ───────────────────────────────────────────────────────────────
-# 📍 SIDEBAR CONTROLS
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# 📍 SIDEBAR NAVIGATION
+# ─────────────────────────────────────────────
 st.sidebar.header("🧭 Navigation")
 show_chatbot = st.sidebar.checkbox("💬 Open Chatbot")
 
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # 📍 CHATBOT SECTION (Groq)
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 if show_chatbot:
     st.header("🤖 Chat with Groq LLM")
     st.markdown("Ask anything using **Groq API** (LLaMA 3 / Mixtral)")
@@ -79,9 +84,9 @@ if show_chatbot:
 
     st.divider()
 
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # 📍 STOCK PREDICTION SECTION
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 @st.cache_data
 def get_sp500_tickers():
     df = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
@@ -120,7 +125,7 @@ if user_input:
         if os.path.exists(model_path):
             st.caption(f"🧠 Keras {keras.__version__} | TensorFlow {tf.__version__}")
             try:
-                model = load_model(model_path, custom_objects={"GRU": GRU})
+                model = load_model(model_path, custom_objects={"GRU": patched_gru})
             except Exception as e:
                 st.error(f"❌ Failed to load model: {e}")
                 st.stop()

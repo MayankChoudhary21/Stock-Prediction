@@ -80,7 +80,7 @@ if show_chatbot:
 
     if st.button("🧹 Clear Chat"):
         st.session_state.messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
-        st.experimental_rerun()
+        st.rerun()
 
     st.divider()
 

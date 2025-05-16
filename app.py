@@ -4,9 +4,11 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import load_model
+from keras.layers import GRU  # Required for loading GRU from .h5
 import yfinance as yf
 import datetime
 import os
+import keras, tensorflow as tf
 
 # Optional: Only import if chatbot is used
 try:
@@ -116,7 +118,13 @@ if user_input:
 
         model_path = f"{user_input}_gru_model.h5"
         if os.path.exists(model_path):
-            model = load_model(model_path)
+            st.caption(f"🧠 Keras {keras.__version__} | TensorFlow {tf.__version__}")
+            try:
+                model = load_model(model_path, custom_objects={"GRU": GRU})
+            except Exception as e:
+                st.error(f"❌ Failed to load model: {e}")
+                st.stop()
+
             y_predict = model.predict(X_test)
             y_predict = scaler.inverse_transform(y_predict.reshape(-1, 1))
             y_test = scaler.inverse_transform(y_test.reshape(-1, 1))

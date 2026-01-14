@@ -1,12 +1,4 @@
-# ─────────────────────────────────────────────
-# 🔴 MUST BE AT TOP (fix yfinance chrome issue)
-# ─────────────────────────────────────────────
 import os
-os.environ["YF_USE_CURL_CFFI"] = "0"
-
-# ─────────────────────────────────────────────
-# IMPORTS
-# ─────────────────────────────────────────────
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -14,7 +6,6 @@ import streamlit as st
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import load_model
 from keras.layers import GRU
-import yfinance as yf
 import datetime
 import keras, tensorflow as tf
 
@@ -25,7 +16,7 @@ except ImportError:
     st.warning("⚠️ Groq package not found. Install via: `pip install groq`")
 
 # ─────────────────────────────────────────────
-# 🔧 GRU PATCH (old models compatibility)
+# 🔧 Patch for old GRU models
 # ─────────────────────────────────────────────
 def patched_gru(*args, **kwargs):
     kwargs.pop("time_major", None)
@@ -54,13 +45,33 @@ COMPANY_MAP = {
     "IBM Corporation": "IBM"
 }
 
+CSV_PATH = "stock_details_5_years.csv"
+
+# ─────────────────────────────────────────────
+# LOAD CSV ONCE
+# ─────────────────────────────────────────────
 @st.cache_data
-def get_available_companies():
-    available = {}
+def load_full_csv():
+    df = pd.read_csv(CSV_PATH)
+    df["Date"] = pd.to_datetime(df["Date"])
+    return df
+
+# ─────────────────────────────────────────────
+# FILTER VALID COMPANIES (CSV + MODEL EXISTS)
+# ─────────────────────────────────────────────
+@st.cache_data
+def get_valid_companies():
+    df = load_full_csv()
+    csv_tickers = set(df["Ticker"].unique())
+
+    valid = {}
     for company, ticker in COMPANY_MAP.items():
-        if os.path.exists(f"{ticker}_gru_model.h5"):
-            available[company] = ticker
-    return available
+        if (
+            ticker in csv_tickers
+            and os.path.exists(f"{ticker}_gru_model.h5")
+        ):
+            valid[company] = ticker
+    return valid
 
 # ─────────────────────────────────────────────
 # SIDEBAR
@@ -69,7 +80,7 @@ st.sidebar.header("🧭 Navigation")
 show_chatbot = st.sidebar.checkbox("💬 Open Chatbot")
 
 # ─────────────────────────────────────────────
-# CHATBOT
+# CHATBOT SECTION
 # ─────────────────────────────────────────────
 if show_chatbot:
     st.header("🤖 Chat with Groq LLM")
@@ -80,85 +91,72 @@ if show_chatbot:
         ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"]
     )
 
-    if not api_key:
-        st.stop()
+    if api_key:
+        client = Groq(api_key=api_key)
 
-    client = Groq(api_key=api_key)
+        if "messages" not in st.session_state:
+            st.session_state.messages = [
+                {"role": "system", "content": "You are a helpful AI assistant."}
+            ]
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "system", "content": "You are a helpful AI assistant."}
-        ]
+        for msg in st.session_state.messages:
+            if msg["role"] != "system":
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
 
-    for msg in st.session_state.messages:
-        if msg["role"] != "system":
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+        user_msg = st.chat_input("Type your message...")
 
-    user_msg = st.chat_input("Type your message...")
+        if user_msg:
+            st.session_state.messages.append({"role": "user", "content": user_msg})
+            with st.chat_message("assistant"):
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=st.session_state.messages
+                )
+                reply = response.choices[0].message.content
+                st.markdown(reply)
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": reply}
+                )
 
-    if user_msg:
-        st.session_state.messages.append({"role": "user", "content": user_msg})
-        with st.chat_message("assistant"):
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=st.session_state.messages
-            )
-            reply = response.choices[0].message.content
-            st.markdown(reply)
-            st.session_state.messages.append({"role": "assistant", "content": reply})
-
-    if st.button("🧹 Clear Chat"):
-        st.session_state.messages = [
-            {"role": "system", "content": "You are a helpful AI assistant."}
-        ]
-        st.rerun()
+        if st.button("🧹 Clear Chat"):
+            st.session_state.messages = [
+                {"role": "system", "content": "You are a helpful AI assistant."}
+            ]
+            st.rerun()
 
     st.divider()
 
 # ─────────────────────────────────────────────
-# STOCK SELECTION
+# COMPANY SELECTION
 # ─────────────────────────────────────────────
-companies = get_available_companies()
+companies = get_valid_companies()
 
 if not companies:
-    st.error("❌ No GRU models found in directory.")
+    st.error("❌ No valid companies found (CSV + model mismatch).")
     st.stop()
 
 selected_company = st.selectbox("🏢 Select Company", sorted(companies.keys()))
 ticker = companies[selected_company]
 
 st.caption(f"📌 Ticker: {ticker}")
-st.caption("📡 Data source: Yahoo Finance (safe mode)")
+st.caption("📁 Data source: Local CSV (offline, stable)")
 
 # ─────────────────────────────────────────────
-# DATA LOADING (FIXED)
+# LOAD DATA FOR SELECTED TICKER
 # ─────────────────────────────────────────────
-@st.cache_data
-def load_data(ticker):
-    df = yf.download(
-        ticker,
-        start="2010-01-01",
-        end="2024-12-31",
-        progress=False,
-        auto_adjust=False
-    )
-
-    if df.empty:
-        return pd.DataFrame()
-
-    df.reset_index(inplace=True)
-    df.set_index("Date", inplace=True)
-    return df
-
-df = load_data(ticker)
+df_full = load_full_csv()
+df = df_full[df_full["Ticker"] == ticker].copy()
 
 if df.empty:
-    st.error(f"❌ Failed to fetch stock data for {ticker}.")
+    st.error(f"❌ No data found for {ticker} in CSV.")
     st.stop()
 
+df.sort_values("Date", inplace=True)
+df.set_index("Date", inplace=True)
+
 if "Close" not in df.columns:
-    st.error("❌ Closing price not available.")
+    st.error("❌ CSV missing 'Close' column.")
     st.stop()
 
 # ─────────────────────────────────────────────
@@ -208,7 +206,7 @@ plt.plot(df["Close"], alpha=0.5)
 plt.legend()
 st.pyplot(fig)
 
-st.subheader("📉 Predicted vs Actual")
+st.subheader("📉 Predicted vs Actual Prices")
 fig = plt.figure(figsize=(14, 6))
 plt.plot(y_test, label="Actual")
 plt.plot(y_pred, label="Predicted")

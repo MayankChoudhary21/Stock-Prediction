@@ -16,7 +16,7 @@ except ImportError:
     st.warning("⚠️ Groq package not found. Install via: `pip install groq`")
 
 # ─────────────────────────────────────────────
-# 🔧 Patch for old GRU models
+# 🔧 Patch for old GRU models (time_major issue)
 # ─────────────────────────────────────────────
 def patched_gru(*args, **kwargs):
     kwargs.pop("time_major", None)
@@ -29,7 +29,8 @@ st.set_page_config(page_title="Stock Predictor + Chatbot", layout="wide")
 st.title("📈 Stock Trend Prediction using GRU + 💬 Chatbot")
 
 # ─────────────────────────────────────────────
-# 🏢 MANUAL COMPANY → TICKER MAP
+# 🏢 MANUAL COMPANY NAME → TICKER MAP
+# (only add companies for which models exist)
 # ─────────────────────────────────────────────
 COMPANY_MAP = {
     "Advanced Micro Devices Inc.": "AMD",
@@ -48,7 +49,7 @@ COMPANY_MAP = {
 CSV_PATH = "stock_details_5_years.csv"
 
 # ─────────────────────────────────────────────
-# LOAD CSV ONCE
+# LOAD CSV ONCE (CACHED)
 # ─────────────────────────────────────────────
 @st.cache_data
 def load_full_csv():
@@ -57,20 +58,27 @@ def load_full_csv():
     return df
 
 # ─────────────────────────────────────────────
-# FILTER VALID COMPANIES (CSV + MODEL EXISTS)
+# FILTER VALID COMPANIES
+# (CSV contains ticker in column named 'Company')
 # ─────────────────────────────────────────────
 @st.cache_data
 def get_valid_companies():
     df = load_full_csv()
-    csv_tickers = set(df["Ticker"].unique())
+
+    if "Company" not in df.columns:
+        st.error("❌ CSV must contain a 'Company' column with ticker symbols.")
+        st.stop()
+
+    csv_tickers = set(df["Company"].astype(str).unique())
 
     valid = {}
-    for company, ticker in COMPANY_MAP.items():
+    for company_name, ticker in COMPANY_MAP.items():
         if (
             ticker in csv_tickers
             and os.path.exists(f"{ticker}_gru_model.h5")
         ):
-            valid[company] = ticker
+            valid[company_name] = ticker
+
     return valid
 
 # ─────────────────────────────────────────────
@@ -80,7 +88,7 @@ st.sidebar.header("🧭 Navigation")
 show_chatbot = st.sidebar.checkbox("💬 Open Chatbot")
 
 # ─────────────────────────────────────────────
-# CHATBOT SECTION
+# CHATBOT SECTION (OPTIONAL)
 # ─────────────────────────────────────────────
 if show_chatbot:
     st.header("🤖 Chat with Groq LLM")
@@ -140,13 +148,13 @@ selected_company = st.selectbox("🏢 Select Company", sorted(companies.keys()))
 ticker = companies[selected_company]
 
 st.caption(f"📌 Ticker: {ticker}")
-st.caption("📁 Data source: Local CSV (offline, stable)")
+st.caption("📁 Data source: Local CSV (offline & stable)")
 
 # ─────────────────────────────────────────────
 # LOAD DATA FOR SELECTED TICKER
 # ─────────────────────────────────────────────
 df_full = load_full_csv()
-df = df_full[df_full["Ticker"] == ticker].copy()
+df = df_full[df_full["Company"] == ticker].copy()
 
 if df.empty:
     st.error(f"❌ No data found for {ticker} in CSV.")
@@ -179,7 +187,7 @@ X_test = X[split:]
 y_test = y[split:]
 
 # ─────────────────────────────────────────────
-# LOAD MODEL
+# LOAD GRU MODEL
 # ─────────────────────────────────────────────
 model_path = f"{ticker}_gru_model.h5"
 st.caption(f"🧠 Keras {keras.__version__} | TensorFlow {tf.__version__}")
@@ -191,7 +199,7 @@ y_pred = scaler.inverse_transform(y_pred)
 y_test = scaler.inverse_transform(y_test.reshape(-1, 1))
 
 # ─────────────────────────────────────────────
-# VISUALS
+# VISUALIZATIONS
 # ─────────────────────────────────────────────
 st.subheader("📊 Closing Price History")
 fig = plt.figure(figsize=(14, 6))

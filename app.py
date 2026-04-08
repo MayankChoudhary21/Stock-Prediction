@@ -60,25 +60,29 @@ def load_full_csv():
     # Clean column names
     df.columns = df.columns.str.strip()
 
-    # 🔥 BULLETPROOF DATE HANDLING
+    # Convert to string
     df["Date"] = df["Date"].astype(str)
 
-    # First pass: normal parsing
-    df["Date_parsed"] = pd.to_datetime(df["Date"], errors="coerce")
+    # ✅ FIX: handle mixed timezone using utc=True
+    df["Date_parsed"] = pd.to_datetime(
+        df["Date"],
+        errors="coerce",
+        utc=True
+    )
 
-    # Second pass: handle timestamps
+    # Handle UNIX timestamps
     mask = df["Date_parsed"].isna()
-
     df.loc[mask, "Date_parsed"] = pd.to_datetime(
         df.loc[mask, "Date"],
         errors="coerce",
-        unit="s"
+        unit="s",
+        utc=True
     )
 
-    # Final assignment
+    # Final assign
     df["Date"] = df["Date_parsed"]
 
-    # Drop bad rows
+    # Drop invalid rows
     df = df.dropna(subset=["Date"])
     df = df.drop(columns=["Date_parsed"])
 

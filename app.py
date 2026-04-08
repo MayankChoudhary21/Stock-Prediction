@@ -45,7 +45,7 @@ COMPANY_MAP = {
 }
 
 # ─────────────────────────────────────────────
-# ✅ SAFE CSV PATH
+# SAFE CSV PATH
 # ─────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "stock_details_5_years.csv")
@@ -60,15 +60,27 @@ def load_full_csv():
     # Clean column names
     df.columns = df.columns.str.strip()
 
-    # 🔥 FINAL FIX: robust datetime parsing
-    df["Date"] = pd.to_datetime(
-        df["Date"],
+    # 🔥 BULLETPROOF DATE HANDLING
+    df["Date"] = df["Date"].astype(str)
+
+    # First pass: normal parsing
+    df["Date_parsed"] = pd.to_datetime(df["Date"], errors="coerce")
+
+    # Second pass: handle timestamps
+    mask = df["Date_parsed"].isna()
+
+    df.loc[mask, "Date_parsed"] = pd.to_datetime(
+        df.loc[mask, "Date"],
         errors="coerce",
-        format="mixed"
+        unit="s"
     )
 
-    # Drop invalid rows
+    # Final assignment
+    df["Date"] = df["Date_parsed"]
+
+    # Drop bad rows
     df = df.dropna(subset=["Date"])
+    df = df.drop(columns=["Date_parsed"])
 
     return df
 

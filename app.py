@@ -15,7 +15,7 @@ except ImportError:
     st.warning("⚠️ Groq package not found. Install via: `pip install groq`")
 
 # ─────────────────────────────────────────────
-# 🔧 Patch for old GRU models
+# 🔧 GRU PATCH
 # ─────────────────────────────────────────────
 def patched_gru(*args, **kwargs):
     kwargs.pop("time_major", None)
@@ -24,54 +24,49 @@ def patched_gru(*args, **kwargs):
 # ─────────────────────────────────────────────
 # STREAMLIT CONFIG
 # ─────────────────────────────────────────────
-st.set_page_config(page_title="Stock Predictor + Chatbot", layout="wide")
-st.title("📈 Stock Trend Prediction using GRU + 💬 Chatbot")
+st.set_page_config(page_title="Stock Predictor", layout="wide")
+st.title("📈 Stock Trend Prediction using GRU")
 
 # ─────────────────────────────────────────────
-# COMPANY MAP (UNCHANGED)
-# ─────────────────────────────────────────────
-COMPANY_MAP = {
-    "Advanced Micro Devices Inc.": "AMD",
-    "Apple Inc.": "AAPL",
-    "Microsoft Corporation": "MSFT",
-    "Amazon.com Inc.": "AMZN",
-    "Alphabet Inc. (Google)": "GOOGL",
-    "NVIDIA Corporation": "NVDA",
-    "Meta Platforms Inc.": "META",
-    "Netflix Inc.": "NFLX",
-    "Adobe Inc.": "ADBE",
-    "Intel Corporation": "INTC",
-    "IBM Corporation": "IBM"
-}
-
-# ─────────────────────────────────────────────
-# SAFE CSV PATH
+# PATH
 # ─────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "stock_details_5_years.csv")
 
 # ─────────────────────────────────────────────
-# LOAD CSV (FINAL FIX HERE)
+# AUTO DETECT COMPANY MAP 🔥
+# ─────────────────────────────────────────────
+def get_model_tickers():
+    files = os.listdir(BASE_DIR)
+    tickers = []
+
+    for f in files:
+        if f.endswith("_gru_model.h5"):
+            ticker = f.replace("_gru_model.h5", "")
+            tickers.append(ticker)
+
+    return sorted(tickers)
+
+# ─────────────────────────────────────────────
+# LOAD CSV (FINAL FIX)
 # ─────────────────────────────────────────────
 @st.cache_data
 def load_full_csv():
     df = pd.read_csv(CSV_PATH)
 
-    # Clean column names
     df.columns = df.columns.str.strip()
 
-    # Convert to string
     df["Date"] = df["Date"].astype(str)
 
-    # ✅ FIX: handle mixed timezone using utc=True
+    # 🔥 FINAL FIX (timezone-safe)
     df["Date_parsed"] = pd.to_datetime(
         df["Date"],
         errors="coerce",
         utc=True
     )
 
-    # Handle UNIX timestamps
     mask = df["Date_parsed"].isna()
+
     df.loc[mask, "Date_parsed"] = pd.to_datetime(
         df.loc[mask, "Date"],
         errors="coerce",
@@ -79,35 +74,29 @@ def load_full_csv():
         utc=True
     )
 
-    # Final assign
     df["Date"] = df["Date_parsed"]
 
-    # Drop invalid rows
     df = df.dropna(subset=["Date"])
     df = df.drop(columns=["Date_parsed"])
 
     return df
 
 # ─────────────────────────────────────────────
-# FILTER VALID COMPANIES
+# GET VALID COMPANIES (AUTO)
 # ─────────────────────────────────────────────
 @st.cache_data
 def get_valid_companies():
     df = load_full_csv()
 
     if "Company" not in df.columns:
-        st.error("❌ CSV must contain a 'Company' column.")
+        st.error("❌ CSV must contain 'Company'")
         st.stop()
 
     csv_tickers = set(df["Company"].astype(str).unique())
+    model_tickers = get_model_tickers()
 
-    valid = {}
-    for company_name, ticker in COMPANY_MAP.items():
-        if (
-            ticker in csv_tickers
-            and os.path.exists(f"{ticker}_gru_model.h5")
-        ):
-            valid[company_name] = ticker
+    # Only keep intersection
+    valid = sorted(list(set(model_tickers) & csv_tickers))
 
     return valid
 
@@ -124,46 +113,29 @@ if show_chatbot:
     st.header("🤖 Chat with Groq LLM")
 
     api_key = st.text_input("🔑 Enter Groq API Key", type="password")
-    model_name = st.selectbox(
-        "🧠 Choose model",
-        ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"]
-    )
 
     if api_key:
         client = Groq(api_key=api_key)
 
         if "messages" not in st.session_state:
-            st.session_state.messages = [
-                {"role": "system", "content": "You are a helpful AI assistant."}
-            ]
+            st.session_state.messages = []
 
-        for msg in st.session_state.messages:
-            if msg["role"] != "system":
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
-
-        user_msg = st.chat_input("Type your message...")
+        user_msg = st.chat_input("Ask something...")
 
         if user_msg:
             st.session_state.messages.append({"role": "user", "content": user_msg})
-            with st.chat_message("assistant"):
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=st.session_state.messages
-                )
-                reply = response.choices[0].message.content
-                st.markdown(reply)
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": reply}
-                )
 
-        if st.button("🧹 Clear Chat"):
-            st.session_state.messages = [
-                {"role": "system", "content": "You are a helpful AI assistant."}
-            ]
-            st.rerun()
+            response = client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=st.session_state.messages
+            )
 
-    st.divider()
+            reply = response.choices[0].message.content
+            st.write(reply)
+
+            st.session_state.messages.append(
+                {"role": "assistant", "content": reply}
+            )
 
 # ─────────────────────────────────────────────
 # COMPANY SELECTION
@@ -171,13 +143,10 @@ if show_chatbot:
 companies = get_valid_companies()
 
 if not companies:
-    st.error("❌ No valid companies found (CSV + model mismatch).")
+    st.error("❌ No valid companies found")
     st.stop()
 
-selected_company = st.selectbox("🏢 Select Company", sorted(companies.keys()))
-ticker = companies[selected_company]
-
-st.caption(f"📌 Ticker: {ticker}")
+ticker = st.selectbox("🏢 Select Company (Ticker)", companies)
 
 # ─────────────────────────────────────────────
 # LOAD DATA
@@ -188,25 +157,24 @@ df = df_full[df_full["Company"] == ticker].copy()
 df.sort_values("Date", inplace=True)
 df.set_index("Date", inplace=True)
 
-if "Close" not in df.columns:
-    st.error("❌ CSV missing 'Close' column.")
+if df.empty:
+    st.error("❌ No data found for this ticker")
     st.stop()
 
 # ─────────────────────────────────────────────
 # PREP DATA
 # ─────────────────────────────────────────────
-close_prices = df["Close"].values.reshape(-1, 1)
+data = df["Close"].values.reshape(-1, 1)
 
 scaler = MinMaxScaler()
-scaled_data = scaler.fit_transform(close_prices)
+scaled = scaler.fit_transform(data)
 
 X, y = [], []
-for i in range(100, len(scaled_data)):
-    X.append(scaled_data[i - 100:i, 0])
-    y.append(scaled_data[i, 0])
+for i in range(100, len(scaled)):
+    X.append(scaled[i - 100:i])
+    y.append(scaled[i])
 
 X, y = np.array(X), np.array(y)
-X = X.reshape(X.shape[0], X.shape[1], 1)
 
 split = int(0.7 * len(X))
 X_test = X[split:]
@@ -215,7 +183,9 @@ y_test = y[split:]
 # ─────────────────────────────────────────────
 # LOAD MODEL
 # ─────────────────────────────────────────────
-model = load_model(f"{ticker}_gru_model.h5", custom_objects={"GRU": patched_gru})
+model_path = os.path.join(BASE_DIR, f"{ticker}_gru_model.h5")
+
+model = load_model(model_path, custom_objects={"GRU": patched_gru})
 
 # ─────────────────────────────────────────────
 # PREDICT
@@ -223,25 +193,17 @@ model = load_model(f"{ticker}_gru_model.h5", custom_objects={"GRU": patched_gru}
 y_pred = model.predict(X_test)
 
 y_pred = scaler.inverse_transform(y_pred)
-y_test = scaler.inverse_transform(y_test.reshape(-1, 1))
+y_test = scaler.inverse_transform(y_test)
 
 # ─────────────────────────────────────────────
 # VISUALIZATION
 # ─────────────────────────────────────────────
-st.subheader("📊 Closing Price History")
+st.subheader("📊 Closing Price")
 fig = plt.figure(figsize=(14, 6))
 plt.plot(df["Close"])
 st.pyplot(fig)
 
-st.subheader("📈 Moving Averages")
-fig = plt.figure(figsize=(14, 6))
-plt.plot(df["Close"].rolling(100).mean(), label="100 MA")
-plt.plot(df["Close"].rolling(200).mean(), label="200 MA")
-plt.plot(df["Close"], alpha=0.5)
-plt.legend()
-st.pyplot(fig)
-
-st.subheader("📉 Predicted vs Actual Prices")
+st.subheader("📉 Prediction vs Actual")
 fig = plt.figure(figsize=(14, 6))
 plt.plot(y_test, label="Actual")
 plt.plot(y_pred, label="Predicted")
@@ -251,21 +213,20 @@ st.pyplot(fig)
 # ─────────────────────────────────────────────
 # CUSTOM PREDICTION
 # ─────────────────────────────────────────────
-st.subheader("🎯 Custom Prediction")
+st.subheader("🎯 Next Day Prediction")
 
 input_price = st.number_input(
-    "Previous Closing Price",
-    value=float(df["Close"].iloc[-1]),
-    min_value=0.01
+    "Enter Last Closing Price",
+    value=float(df["Close"].iloc[-1])
 )
 
-if st.button("Predict Next Day Price"):
-    last_99 = scaled_data[-99:]
-    new_val = scaler.transform([[input_price]])[0][0]
+if st.button("Predict"):
+    last_99 = scaled[-99:]
+    new_val = scaler.transform([[input_price]])
 
     seq = np.append(last_99, new_val).reshape(1, 100, 1)
 
-    prediction = model.predict(seq)
-    predicted_price = scaler.inverse_transform(prediction)[0][0]
+    pred = model.predict(seq)
+    price = scaler.inverse_transform(pred)[0][0]
 
-    st.success(f"📈 Predicted Closing Price: **${predicted_price:.2f}**")
+    st.success(f"📈 Predicted Price: ${price:.2f}")

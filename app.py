@@ -45,26 +45,29 @@ COMPANY_MAP = {
 }
 
 # ─────────────────────────────────────────────
-# ✅ SAFE CSV PATH (minimal fix)
+# ✅ SAFE CSV PATH
 # ─────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "stock_details_5_years.csv")
 
 # ─────────────────────────────────────────────
-# LOAD CSV (FIXED ONLY HERE)
+# LOAD CSV (FINAL FIX HERE)
 # ─────────────────────────────────────────────
 @st.cache_data
 def load_full_csv():
     df = pd.read_csv(CSV_PATH)
 
-    # ✅ Fix column spacing issues
+    # Clean column names
     df.columns = df.columns.str.strip()
 
-    # ✅ FIX: robust datetime parsing (THIS SOLVES YOUR ERROR)
-    df["Date"] = df["Date"].astype(str)
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    # 🔥 FINAL FIX: robust datetime parsing
+    df["Date"] = pd.to_datetime(
+        df["Date"],
+        errors="coerce",
+        format="mixed"
+    )
 
-    # Drop invalid dates
+    # Drop invalid rows
     df = df.dropna(subset=["Date"])
 
     return df
@@ -169,10 +172,15 @@ df = df_full[df_full["Company"] == ticker].copy()
 df.sort_values("Date", inplace=True)
 df.set_index("Date", inplace=True)
 
+if "Close" not in df.columns:
+    st.error("❌ CSV missing 'Close' column.")
+    st.stop()
+
 # ─────────────────────────────────────────────
 # PREP DATA
 # ─────────────────────────────────────────────
 close_prices = df["Close"].values.reshape(-1, 1)
+
 scaler = MinMaxScaler()
 scaled_data = scaler.fit_transform(close_prices)
 
@@ -193,6 +201,9 @@ y_test = y[split:]
 # ─────────────────────────────────────────────
 model = load_model(f"{ticker}_gru_model.h5", custom_objects={"GRU": patched_gru})
 
+# ─────────────────────────────────────────────
+# PREDICT
+# ─────────────────────────────────────────────
 y_pred = model.predict(X_test)
 
 y_pred = scaler.inverse_transform(y_pred)

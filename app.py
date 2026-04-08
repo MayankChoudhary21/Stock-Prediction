@@ -12,7 +12,7 @@ import keras, tensorflow as tf
 try:
     from groq import Groq
 except ImportError:
-    st.warning("⚠️ Groq package not found. Install via: `pip install groq`")
+    st.warning("⚠️ Groq package not found. Install via: pip install groq")
 
 # ─────────────────────────────────────────────
 # 🔧 GRU PATCH
@@ -25,30 +25,26 @@ def patched_gru(*args, **kwargs):
 # STREAMLIT CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(page_title="Stock Predictor", layout="wide")
-st.title("📈 Stock Trend Prediction using GRU")
+st.title("📈 Stock Trend Prediction using GRU + 💬 Chatbot")
 
 # ─────────────────────────────────────────────
-# PATH
+# PATH SETUP
 # ─────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "stock_details_5_years.csv")
 
 # ─────────────────────────────────────────────
-# AUTO DETECT COMPANY MAP 🔥
+# AUTO DETECT MODELS
 # ─────────────────────────────────────────────
 def get_model_tickers():
-    files = os.listdir(BASE_DIR)
-    tickers = []
-
-    for f in files:
-        if f.endswith("_gru_model.h5"):
-            ticker = f.replace("_gru_model.h5", "")
-            tickers.append(ticker)
-
-    return sorted(tickers)
+    return sorted([
+        f.replace("_gru_model.h5", "")
+        for f in os.listdir(BASE_DIR)
+        if f.endswith("_gru_model.h5")
+    ])
 
 # ─────────────────────────────────────────────
-# LOAD CSV (FINAL FIX)
+# LOAD CSV (FIXED)
 # ─────────────────────────────────────────────
 @st.cache_data
 def load_full_csv():
@@ -58,15 +54,15 @@ def load_full_csv():
 
     df["Date"] = df["Date"].astype(str)
 
-    # 🔥 FINAL FIX (timezone-safe)
+    # ✅ FIX: timezone-safe parsing
     df["Date_parsed"] = pd.to_datetime(
         df["Date"],
         errors="coerce",
         utc=True
     )
 
+    # Handle timestamps
     mask = df["Date_parsed"].isna()
-
     df.loc[mask, "Date_parsed"] = pd.to_datetime(
         df.loc[mask, "Date"],
         errors="coerce",
@@ -82,7 +78,7 @@ def load_full_csv():
     return df
 
 # ─────────────────────────────────────────────
-# GET VALID COMPANIES (AUTO)
+# VALID COMPANIES
 # ─────────────────────────────────────────────
 @st.cache_data
 def get_valid_companies():
@@ -93,12 +89,9 @@ def get_valid_companies():
         st.stop()
 
     csv_tickers = set(df["Company"].astype(str).unique())
-    model_tickers = get_model_tickers()
+    model_tickers = set(get_model_tickers())
 
-    # Only keep intersection
-    valid = sorted(list(set(model_tickers) & csv_tickers))
-
-    return valid
+    return sorted(list(csv_tickers & model_tickers))
 
 # ─────────────────────────────────────────────
 # SIDEBAR
@@ -107,7 +100,7 @@ st.sidebar.header("🧭 Navigation")
 show_chatbot = st.sidebar.checkbox("💬 Open Chatbot")
 
 # ─────────────────────────────────────────────
-# CHATBOT (UNCHANGED)
+# CHATBOT
 # ─────────────────────────────────────────────
 if show_chatbot:
     st.header("🤖 Chat with Groq LLM")
@@ -158,7 +151,11 @@ df.sort_values("Date", inplace=True)
 df.set_index("Date", inplace=True)
 
 if df.empty:
-    st.error("❌ No data found for this ticker")
+    st.error("❌ No data found for selected ticker")
+    st.stop()
+
+if "Close" not in df.columns:
+    st.error("❌ CSV missing 'Close'")
     st.stop()
 
 # ─────────────────────────────────────────────
@@ -184,7 +181,6 @@ y_test = y[split:]
 # LOAD MODEL
 # ─────────────────────────────────────────────
 model_path = os.path.join(BASE_DIR, f"{ticker}_gru_model.h5")
-
 model = load_model(model_path, custom_objects={"GRU": patched_gru})
 
 # ─────────────────────────────────────────────
@@ -198,12 +194,21 @@ y_test = scaler.inverse_transform(y_test)
 # ─────────────────────────────────────────────
 # VISUALIZATION
 # ─────────────────────────────────────────────
-st.subheader("📊 Closing Price")
+st.subheader("📊 Closing Price History")
 fig = plt.figure(figsize=(14, 6))
 plt.plot(df["Close"])
 st.pyplot(fig)
 
-st.subheader("📉 Prediction vs Actual")
+# ✅ RESTORED MOVING AVERAGE
+st.subheader("📈 Moving Averages")
+fig = plt.figure(figsize=(14, 6))
+plt.plot(df["Close"].rolling(100).mean(), label="100-day MA")
+plt.plot(df["Close"].rolling(200).mean(), label="200-day MA")
+plt.plot(df["Close"], alpha=0.5)
+plt.legend()
+st.pyplot(fig)
+
+st.subheader("📉 Predicted vs Actual Prices")
 fig = plt.figure(figsize=(14, 6))
 plt.plot(y_test, label="Actual")
 plt.plot(y_pred, label="Predicted")
@@ -213,20 +218,21 @@ st.pyplot(fig)
 # ─────────────────────────────────────────────
 # CUSTOM PREDICTION
 # ─────────────────────────────────────────────
-st.subheader("🎯 Next Day Prediction")
+st.subheader("🎯 Custom Prediction")
 
 input_price = st.number_input(
-    "Enter Last Closing Price",
-    value=float(df["Close"].iloc[-1])
+    "Previous Closing Price",
+    value=float(df["Close"].iloc[-1]),
+    min_value=0.01
 )
 
-if st.button("Predict"):
+if st.button("Predict Next Day Price"):
     last_99 = scaled[-99:]
     new_val = scaler.transform([[input_price]])
 
     seq = np.append(last_99, new_val).reshape(1, 100, 1)
 
-    pred = model.predict(seq)
-    price = scaler.inverse_transform(pred)[0][0]
+    prediction = model.predict(seq)
+    predicted_price = scaler.inverse_transform(prediction)[0][0]
 
-    st.success(f"📈 Predicted Price: ${price:.2f}")
+    st.success(f"📈 Predicted Closing Price: ${predicted_price:.2f}")
